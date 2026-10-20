@@ -380,6 +380,45 @@ def _has_vulkan():
                     and ctypes.util.find_library("vulkan-1")))
 
 
+# The oldest Windows driver each CUDA runtime whisper.cpp publishes for will
+# load on, from NVIDIA's compatibility table. A build for a newer runtime than
+# the driver knows fails at start, so the driver decides, not the card.
+_CUDA_BUILDS = (((551, 61), "whisper-bin-win-cuda-12.4.0-x64.zip"),
+                ((522, 6), "whisper-bin-win-cuda-11.8.0-x64.zip"))
+
+
+def _nvidia_driver():
+    """(major, minor) of the NVIDIA driver on Windows, or None without one."""
+    smi = shutil.which("nvidia-smi")
+    if not smi:
+        return None
+    try:
+        result = subprocess.run(
+            [smi, "--query-gpu=driver_version", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=10, check=False,
+            creationflags=paths.NO_WINDOW,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    found = re.match(r"\s*(\d+)\.(\d+)", result.stdout or "")
+    return (int(found.group(1)), int(found.group(2))) if found else None
+
+
+def _cuda_whisper_assets():
+    """The CUDA builds this machine's NVIDIA driver can run, newest first.
+
+    Several hundred megabytes against twenty for the BLAS build, and worth it:
+    a mid-range card transcribes a sentence in a fraction of a second, which is
+    what listening for the wake word all day needs.
+    """
+    if sys.platform != "win32" or _arch() != "x64":
+        return ()
+    driver = _nvidia_driver()
+    if driver is None:
+        return ()
+    return tuple(name for minimum, name in _CUDA_BUILDS if driver >= minimum)
+
+
 def _wanted_assets(program):
     """Asset name endings to accept, best first.
 
@@ -400,7 +439,8 @@ def _wanted_assets(program):
             # x64 whatever this machine is, because whisper.cpp publishes no
             # arm64 build for Windows: a Snapdragon runs this one emulated,
             # which is slow but is the only local option there is.
-            return ("whisper-blas-bin-x64.zip", "whisper-bin-x64.zip")
+            return _cuda_whisper_assets() + ("whisper-blas-bin-x64.zip",
+                                             "whisper-bin-x64.zip")
         if _has_vulkan() and arch == "x64":
             return ("bin-win-vulkan-x64.zip", f"bin-win-cpu-{arch}.zip")
         return (f"bin-win-cpu-{arch}.zip",)

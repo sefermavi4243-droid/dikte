@@ -1211,4 +1211,10 @@ TR = {
     "Project name:": "Proje adı:",
     "Choose the project folder": "Proje klasörünü seç",
     "Could not save settings: {error}": "Ayarlar kaydedilemedi: {error}",
+
+    # --- wake word --------------------------------------------------------------
+    "Listen for “Claude”": "“Claude” dendiğinde dinle",
+    "Talk to you later.": "Görüşürüz.",
+    "Dikte: listening for the wake word stopped": "Dikte: uyandırma kelimesi dinlemesi durdu",
+    "The background microphone stopped.": "Arka plandaki mikrofon durdu.",
 }

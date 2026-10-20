@@ -85,7 +85,7 @@ class Pipeline(QObject):
         return self._thread is not None and self._thread.is_alive()
 
     def run(self, wav_path, duration, rms_values=(), ask=False, paste=None,
-            focus=None, retry=None):
+            focus=None, retry=None, transcript=None):
         """`paste` overrides the setting for this one run, which is what a
         dictation asked for from a terminal wants: the text comes back down the
         socket, and pasting it into whatever had focus is nobody's intention.
@@ -107,7 +107,7 @@ class Pipeline(QObject):
                     return False
                 self._retrying.add(wav_path)
             self._jobs.append((wav_path, duration, list(rms_values), ask, paste,
-                               focus, retry))
+                               focus, retry, transcript))
             if self._draining:
                 return
             self._draining = True
@@ -194,7 +194,7 @@ class Pipeline(QObject):
                 self.stage.emit(stage)
 
     def _work(self, wav_path, duration, rms_values, ask, paste_override=None,
-              focus=None, retry=None):
+              focus=None, retry=None, transcript=None):
         conf = self.conf
         started = time.monotonic()
         raw = ""
@@ -211,7 +211,7 @@ class Pipeline(QObject):
         # Room tone only: don't spend an API call, and don't invite a
         # hallucinated sentence back. A retry has no levels to judge by, and
         # its recording passed this check the first time.
-        if conf["skip_silent"] and retry is None:
+        if conf["skip_silent"] and retry is None and transcript is None:
             stats = vad.analyse(rms_values, CHUNK_SECONDS, conf["speech_margin_db"])
             if vad.is_silent(stats, conf["silence_db"], conf["speech_margin_db"],
                              conf["min_voiced_seconds"]):
@@ -233,7 +233,11 @@ class Pipeline(QObject):
             # Read once, at the start the run: a retry asks the same request
             # again, not whatever the settings have drifted to since.
             language, prompt = conf["language"], conf["transcribe_prompt"]
-            if auto:
+            if transcript is not None:
+                # Heard already, by the wake listener: transcribing the same
+                # seconds twice would only add their latency again.
+                raw, detected = transcript, ""
+            elif auto:
                 raw, detected = self._transcribe(
                     lambda: api.transcribe_detected(
                         target, wav_path, language=language, prompt=prompt,

@@ -57,6 +57,7 @@ from . import mac_window  # noqa: E402
 from . import meeting  # noqa: E402
 from . import projects  # noqa: E402
 from . import speech  # noqa: E402
+from . import wake  # noqa: E402
 from . import trayicon  # noqa: E402
 from . import update  # noqa: E402
 from .i18n import t  # noqa: E402
@@ -193,6 +194,16 @@ class Dikte:
         self.speaker.failed.connect(self._on_speech_failed)
         for signal in (self.speaker.started, self.speaker.finished):
             signal.connect(self._on_speaking_changed)
+        self.speaker.completed.connect(self._on_speech_finished)
+        self.wake = wake.WakeListener(self.conf)
+        self.wake.speaking = self._speaking
+        self.wake.heard.connect(self._on_wake_command)
+        self.wake.woke.connect(self._on_woke)
+        self.wake.stop_requested.connect(self._on_wake_stop)
+        self.wake.conversation_ended.connect(self._on_conversation_ended)
+        self.wake.armed_changed.connect(self._on_wake_armed)
+        self.wake.level.connect(self._on_wake_level)
+        self.wake.failed.connect(self._on_wake_failed)
         self.pipeline = Pipeline(self.conf)
         self.ask_pipeline = Pipeline(self.conf)
         self.meeting_recorder = audio.MeetingRecorder()
@@ -286,6 +297,12 @@ class Dikte:
         self.reset_action.triggered.connect(self.reset_conversation)
         self.menu.addAction(self.reset_action)
         self._build_project_menu()
+
+        self.wake_action = QAction(t("Listen for “Claude”"), self.menu)
+        self.wake_action.setCheckable(True)
+        self.wake_action.setChecked(bool(getattr(self, "conf", {}).get("wake_enabled")))
+        self.wake_action.triggered.connect(self.toggle_wake)
+        self.menu.addAction(self.wake_action)
 
         self.ask_cancel_action = QAction("", self.menu)
         self.ask_cancel_action.triggered.connect(self.cancel_ask)
@@ -397,17 +414,27 @@ class Dikte:
 
     def _set_state(self, state):
         self.state = state
+        self._suspend_wake()
         self._refresh_tray()
 
     def _set_ask_state(self, state):
         self.ask_state = state
+        self._suspend_wake()
         self._refresh_tray()
 
     def _set_meeting_state(self, state):
         self.meeting_state = state
         if state != M_WORKING:
             self.meeting_message = ""
+        self._suspend_wake()
         self._refresh_tray()
+
+    def _suspend_wake(self):
+        """The background listener steps aside while a recording holds the mic."""
+        listener = getattr(self, "wake", None)
+        if listener is not None:
+            listener.suspend(RECORDING in (self.state, self.ask_state)
+                             or self.meeting_state == M_RECORDING)
 
     def _refresh_tray(self):
         labels = {
@@ -1345,6 +1372,79 @@ class Dikte:
             return
         self._project_saved(path)
 
+    # ---- waking the agent by name -------------------------------------------
+
+    def _apply_wake(self):
+        listener = getattr(self, "wake", None)
+        if listener is None:
+            return
+        if self.conf["wake_enabled"] and not listener.running:
+            listener.start()
+        elif not self.conf["wake_enabled"] and listener.running:
+            listener.stop()
+
+    def toggle_wake(self):
+        self.conf["wake_enabled"] = not self.conf["wake_enabled"]
+        try:
+            self.conf.save()
+        except OSError as exc:
+            self._report(t("Could not save settings: {error}", error=exc),
+                         self.ask_overlay)
+        self._apply_wake()
+        self._refresh_tray()
+
+    def _on_woke(self):
+        self.speaker.stop()
+        self.cues.play("start")
+        self.ask_overlay.show_recording(asking=True)
+
+    def _on_wake_level(self, level):
+        if self.ask_state == IDLE:
+            self.ask_overlay.push_level(level)
+
+    def _on_wake_armed(self, armed):
+        if not armed and self.ask_state == IDLE and self.ask_overlay.state == "asking":
+            self.ask_overlay.dismiss()
+
+    def _on_wake_command(self, text, wav_path, duration):
+        """A spoken command, heard and transcribed by the background listener."""
+        self.speaker.stop()
+        if isinstance(getattr(self, "home_messages", None), dict):
+            self.home_messages[ASK] = ""
+            self.home_messages.pop("ask_stage", None)
+        self.cues.play("stop")
+        self._set_ask_state(BUSY)
+        self.ask_overlay.show_busy(t("Asking {name}…", name=i18n.name(
+            assistant.display_name(self.conf), "dative")))
+        # Not pasted: nobody is at the keyboard to say where it should land.
+        self.ask_pipeline.run(wav_path, duration, (), ask=True, paste=False,
+                              transcript=text)
+
+    def _on_wake_stop(self):
+        self.speaker.stop()
+        if self.ask_state == BUSY:
+            self.cancel_ask()
+        elif self.ask_overlay.state == "asking" and self.ask_state == IDLE:
+            self.ask_overlay.dismiss()
+
+    def _on_conversation_ended(self):
+        self.speaker.stop()
+        if self.ask_state == IDLE:
+            self.ask_overlay.show_done(t("Talk to you later."), 1500)
+
+    def _on_speech_finished(self):
+        """An answer has been read: the follow-up needs no name."""
+        listener = getattr(self, "wake", None)
+        if (listener is not None and listener.running
+                and self.conf["wake_conversation"] and self.ask_state == IDLE):
+            listener.arm(self.conf["wake_follow_seconds"])
+            self.ask_overlay.show_recording(asking=True)
+
+    def _on_wake_failed(self, message):
+        self.tray.showMessage(t("Dikte: listening for the wake word stopped"),
+                              message, QSystemTrayIcon.MessageIcon.Warning, 8000)
+        self._refresh_tray()
+
     def _speaking(self):
         speaker = getattr(self, "speaker", None)
         return speaker is not None and speaker.speaking
@@ -1609,6 +1709,7 @@ class Dikte:
 
     def _apply_settings(self):
         self.cues.set_enabled(self.conf["audio_cues"])
+        self._apply_wake()
         for indicator in (self.overlay, self.ask_overlay):
             indicator.set_theme(self.conf["theme"])
             indicator.corner = self.conf["overlay_corner"]
@@ -1667,6 +1768,8 @@ class Dikte:
             self._settle(kind, {"ok": False,
                                 "error": "the instance is shutting down"})
         self.evdev.stop()
+        self.wake.stop()
+        self.speaker.stop()
         if self.recording:
             self.recorder.cancel()
         # A meeting in progress is closed properly rather than thrown away: the

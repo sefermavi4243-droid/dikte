@@ -611,6 +611,12 @@ DEFAULTS = {
     "speak_voice": "",              # empty -> the speech language's voice
     "speak_rate": 1.0,
     "speak_max_chars": 600,         # cut at a sentence boundary past this
+
+    # --- waking the agent by name -------------------------------------------
+    "wake_enabled": False,          # keep the microphone open for "Claude…"
+    "wake_conversation": True,      # after an answer, listen without the name
+    "wake_follow_seconds": 8,       # how long that window stays open
+    "wake_margin_db": 12.0,         # how far above the room speech must rise
 }
 
 # Saving the settings window used to write the whole default prompt into the

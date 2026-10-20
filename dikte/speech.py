@@ -149,7 +149,8 @@ class Speaker(QObject):
     """One answer spoken at a time; a new one or stop() cuts the last short."""
 
     started = pyqtSignal()
-    finished = pyqtSignal()
+    finished = pyqtSignal()   # ended, however it ended
+    completed = pyqtSignal()  # read to the end, not cut short
     failed = pyqtSignal(str)
 
     def __init__(self, parent=None):
@@ -215,6 +216,7 @@ class Speaker(QObject):
 
     def _run(self, generation, text, engine, voice, language, rate):
         folder = tempfile.mkdtemp(prefix="dikte-tts-")
+        failed = False
         try:
             if self._current(generation):
                 self.started.emit()
@@ -225,6 +227,7 @@ class Speaker(QObject):
             else:
                 self._speak_native(generation, text, rate)
         except Exception as exc:  # noqa: BLE001 - the thread must report, not die
+            failed = True
             if self._current(generation):
                 detail = exc.args[0] if exc.args else exc
                 if isinstance(detail, list):
@@ -235,6 +238,8 @@ class Speaker(QObject):
             if self._current(generation) and self._speaking:
                 self._speaking = False
                 self.finished.emit()
+                if not failed:
+                    self.completed.emit()
 
     def _speak_windows(self, generation, text, voice, language, rate, folder):
         import winsound
