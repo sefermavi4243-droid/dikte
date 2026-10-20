@@ -223,7 +223,8 @@ class Pipeline(QObject):
 
         try:
             stage = t("Transcribing…")
-            self.stage.emit(stage)
+            if transcript is None:
+                self.stage.emit(stage)
             target = conf.transcribe_target()
             # The spoken language is only knowable after the fact, and only the
             # local server says what it heard: auto mode asks it there, and
