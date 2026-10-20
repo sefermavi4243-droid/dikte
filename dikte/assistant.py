@@ -415,7 +415,7 @@ def codex_models():
     if not shutil.which("codex"):
         return []
     try:
-        proc = subprocess.run(["codex", "debug", "models"],
+        proc = subprocess.run(paths.command(["codex", "debug", "models"]),
                               capture_output=True, text=True, timeout=30)
         catalog = json.loads(proc.stdout or "null")
     except (OSError, subprocess.SubprocessError, ValueError):
@@ -506,7 +506,7 @@ def agy_models():
     if not shutil.which("agy"):
         return []
     try:
-        proc = subprocess.run(["agy", "models"],
+        proc = subprocess.run(paths.command(["agy", "models"]),
                               capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.SubprocessError):
         return []
@@ -569,7 +569,7 @@ def _stream(cmd, conf, on_event, should_stop):
     grouped = {"start_new_session": True} if os.name == "posix" else {}
     try:
         proc = subprocess.Popen(
-            cmd, cwd=working_dir(conf), stdin=subprocess.DEVNULL,
+            paths.command(cmd), cwd=working_dir(conf), stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=stderr_file,
             text=True, encoding="utf-8", errors="replace", bufsize=1,
             creationflags=paths.NO_WINDOW,

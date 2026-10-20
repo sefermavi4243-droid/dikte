@@ -26,6 +26,7 @@ from dikte import assistant
 from dikte import config as cfg
 from dikte import ggml
 from dikte import i18n
+from dikte import paths
 from dikte import update
 
 # What the application is, rather than what it does: PipeWire, wl-clipboard,
@@ -111,6 +112,10 @@ class DikteTest(unittest.TestCase):
         self.patch_attr(ggml, "DATA_DIR", data_dir)
         self.patch_attr(ggml, "BIN_DIR", data_dir / "bin")
         self.patch_attr(ggml, "MODELS_DIR", data_dir / "models")
+
+        # The argv a test builds is the argv it checks: resolving a program
+        # name to the real file would make the result depend on this machine.
+        self.patch_attr(paths, "command", list)
 
         i18n.set_language("en")
         self.addCleanup(i18n.set_language, "en")

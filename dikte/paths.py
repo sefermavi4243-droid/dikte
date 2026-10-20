@@ -26,6 +26,55 @@ NO_WINDOW = (getattr(subprocess, "CREATE_NO_WINDOW", 0)
              if sys.platform == "win32" else 0)
 
 
+# npm installs a CLI on Windows as a .cmd shim. CreateProcess will not find a
+# .cmd by its bare name, and running one goes through cmd.exe, which mangles
+# arguments with quotes, newlines or "&" in them, as every prompt has. The shim
+# names what it really runs, so that is what gets started instead.
+_SHIM_TARGET = None
+
+
+def _shim_target(shim):
+    """The argv a npm .cmd shim runs, without its own %* , or None."""
+    global _SHIM_TARGET
+    import re
+    if _SHIM_TARGET is None:
+        _SHIM_TARGET = re.compile(r'"%(?:~?dp0)%?\\?([^"%]+)"')
+    try:
+        with open(shim, encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        return None
+    folder = os.path.dirname(shim)
+    found = [os.path.normpath(os.path.join(folder, part))
+             for part in _SHIM_TARGET.findall(text)]
+    exes = [p for p in found if p.lower().endswith(".exe") and os.path.isfile(p)]
+    if exes:
+        return [exes[-1]]
+    scripts = [p for p in found if p.lower().endswith((".js", ".cjs", ".mjs"))
+               and os.path.isfile(p)]
+    node = shutil.which("node")
+    if scripts and node:
+        return [node, scripts[-1]]
+    return None
+
+
+def command(cmd):
+    """`cmd` with its program resolved the way Windows can actually start it.
+
+    Elsewhere, and for anything that is not a shim, it comes back unchanged.
+    """
+    if sys.platform != "win32" or not cmd:
+        return list(cmd)
+    found = shutil.which(cmd[0])
+    if not found:
+        return list(cmd)
+    if found.lower().endswith((".cmd", ".bat")):
+        target = _shim_target(found)
+        if target:
+            return target + list(cmd[1:])
+    return [found] + list(cmd[1:])
+
+
 def env_path(var, default):
     """The directory a variable names, or the one it stands in for."""
     return pathlib.Path(os.environ.get(var) or os.path.expanduser(default))

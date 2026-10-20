@@ -302,7 +302,7 @@ def _output(cmd, timeout, service):
     try:
         try:
             proc = subprocess.Popen(
-                cmd, cwd=os.path.expanduser("~"), stdin=subprocess.DEVNULL,
+                paths.command(cmd), cwd=os.path.expanduser("~"), stdin=subprocess.DEVNULL,
                 stdout=out_file, stderr=err_file,
                 creationflags=paths.NO_WINDOW,
                 **grouped,

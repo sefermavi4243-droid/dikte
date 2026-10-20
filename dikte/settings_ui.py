@@ -27,6 +27,7 @@ from . import filetranscribe
 from . import ggml
 from . import hardware
 from . import hotkey
+from . import projects
 from . import hub
 from . import i18n
 from . import ipc
@@ -2036,6 +2037,67 @@ class SettingsWindow(QDialog):
         answer_form.addRow("", self.assistant_cleanup)
         layout.addWidget(answer)
 
+        voice = QGroupBox(t("Reading the answer aloud"))
+        voice_form = QFormLayout(voice)
+        self.speak_answers = QCheckBox(t("Read the answer aloud"))
+        voice_form.addRow("", self.speak_answers)
+        self.speak_engine = QComboBox()
+        self.speak_engine.addItem(t("Windows voice (offline)"), "windows")
+        self.speak_engine.addItem(t("Edge neural voice (online, needs edge-tts)"), "edge")
+        voice_form.addRow(t("Voice engine"), self.speak_engine)
+        self.speak_voice = QLineEdit()
+        self.speak_voice.setPlaceholderText(t("automatic, from the speech language"))
+        self.speak_voice.setToolTip(t(
+            "A Windows voice name such as “Microsoft Tolga”, or an Edge voice "
+            "such as “tr-TR-AhmetNeural”."
+        ))
+        voice_form.addRow(t("Voice"), self.speak_voice)
+        self.speak_rate = QSpinBox()
+        self.speak_rate.setRange(50, 200)
+        self.speak_rate.setSingleStep(10)
+        self.speak_rate.setSuffix(" %")
+        voice_form.addRow(t("Speed"), self.speak_rate)
+        self.speak_max_chars = QSpinBox()
+        self.speak_max_chars.setRange(0, 5000)
+        self.speak_max_chars.setSingleStep(100)
+        self.speak_max_chars.setSpecialValueText(t("the whole answer"))
+        self.speak_max_chars.setSuffix(t(" characters"))
+        voice_form.addRow(t("Read at most"), self.speak_max_chars)
+        layout.addWidget(voice)
+
+        wake_box = QGroupBox(t("Waking it by name"))
+        wake_form = QFormLayout(wake_box)
+        self.wake_enabled = QCheckBox(t("Listen for “Claude” in the background"))
+        self.wake_enabled.setToolTip(t(
+            "Every sentence heard is transcribed to find the name; only one "
+            "that starts with it is sent. A local model keeps all of it on "
+            "this machine."
+        ))
+        wake_form.addRow("", self.wake_enabled)
+        self.wake_conversation = QCheckBox(t("After an answer, take a follow-up without the name"))
+        wake_form.addRow("", self.wake_conversation)
+        self.wake_follow_seconds = QSpinBox()
+        self.wake_follow_seconds.setRange(2, 60)
+        self.wake_follow_seconds.setSuffix(t(" s"))
+        wake_form.addRow(t("Wait for a follow-up"), self.wake_follow_seconds)
+        self.wake_margin_db = QSpinBox()
+        self.wake_margin_db.setRange(4, 30)
+        self.wake_margin_db.setSuffix(" dB")
+        self.wake_margin_db.setToolTip(t(
+            "How far above the room's noise a voice has to rise. Raise it in a "
+            "noisy room, lower it if quiet speech is missed."
+        ))
+        wake_form.addRow(t("Speech threshold"), self.wake_margin_db)
+        self.projects_roots = QPlainTextEdit()
+        self.projects_roots.setPlaceholderText(os.linesep.join(projects.default_roots()))
+        self.projects_roots.setMaximumHeight(90)
+        self.projects_roots.setToolTip(t(
+            "Folders whose subfolders a spoken project name is matched "
+            "against, one per line. New projects are created in the first."
+        ))
+        wake_form.addRow(t("Project folders"), self.projects_roots)
+        layout.addWidget(wake_box)
+
         prompt_label = QLabel(t(
             "Told to the agent alongside every command, on top of whatever your "
             "own configuration already says."
@@ -2677,6 +2739,16 @@ class SettingsWindow(QDialog):
         self.assistant_timeout.setValue(int(conf["assistant_timeout"]))
         self.assistant_session_minutes.setValue(int(conf["assistant_session_minutes"]))
         self.assistant_paste.setChecked(conf["assistant_paste"])
+        self.speak_answers.setChecked(conf["speak_answers"])
+        self.speak_engine.setCurrentIndex(max(0, self.speak_engine.findData(conf["speak_engine"])))
+        self.speak_voice.setText(conf["speak_voice"])
+        self.speak_rate.setValue(round(float(conf["speak_rate"]) * 100))
+        self.speak_max_chars.setValue(int(conf["speak_max_chars"]))
+        self.wake_enabled.setChecked(conf["wake_enabled"])
+        self.wake_conversation.setChecked(conf["wake_conversation"])
+        self.wake_follow_seconds.setValue(int(conf["wake_follow_seconds"]))
+        self.wake_margin_db.setValue(round(float(conf["wake_margin_db"])))
+        self.projects_roots.setPlainText(conf["projects_roots"])
         self.assistant_cleanup.setChecked(conf["assistant_cleanup"])
         self.assistant_prompt.setPlainText(
             conf["assistant_prompt"] or self._loaded_defaults["assistant"]
@@ -2857,6 +2929,16 @@ class SettingsWindow(QDialog):
         conf["assistant_timeout"] = self.assistant_timeout.value()
         conf["assistant_session_minutes"] = self.assistant_session_minutes.value()
         conf["assistant_paste"] = self.assistant_paste.isChecked()
+        conf["speak_answers"] = self.speak_answers.isChecked()
+        conf["speak_engine"] = self.speak_engine.currentData()
+        conf["speak_voice"] = self.speak_voice.text().strip()
+        conf["speak_rate"] = self.speak_rate.value() / 100
+        conf["speak_max_chars"] = self.speak_max_chars.value()
+        conf["wake_enabled"] = self.wake_enabled.isChecked()
+        conf["wake_conversation"] = self.wake_conversation.isChecked()
+        conf["wake_follow_seconds"] = self.wake_follow_seconds.value()
+        conf["wake_margin_db"] = float(self.wake_margin_db.value())
+        conf["projects_roots"] = self.projects_roots.toPlainText().strip()
         conf["assistant_cleanup"] = self.assistant_cleanup.isChecked()
         assistant_prompt = self.assistant_prompt.toPlainText().strip()
         conf["assistant_prompt"] = ("" if assistant_prompt in (
