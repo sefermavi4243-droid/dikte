@@ -418,6 +418,16 @@ da senin soracağın soruya verilecek bir yanıt yok.
 - İstek cevabı değiştirecek biçimde belirsizse, daha olası okumaya göre cevapla
   ve varsayımını bir yan cümlede söyle"""
 
+SPOKEN_RULE_EN = """
+- Your answer is also read out loud. Write it to be heard: no file paths longer
+  than a name, no symbols, no code unless code was asked for. When you changed
+  code, say what changed in words rather than showing it"""
+
+SPOKEN_RULE_TR = """
+- Cevabın ayrıca sesli okunuyor. Duyulmak için yaz: dosya adından uzun yol,
+  sembol, istenmedikçe kod yazma. Kodu değiştirdiysen neyi değiştirdiğini
+  göstermek yerine kelimelerle söyle"""
+
 DEFAULTS = {
     "theme": "nord",
     "ui_language": "auto",          # auto | tr | en
@@ -592,6 +602,13 @@ DEFAULTS = {
     "assistant_paste": True,        # paste the answer, not just copy it
     "assistant_session_minutes": 30,  # 0 -> every command starts fresh
     "assistant_timeout": 240,
+
+    # --- reading the answer out loud ----------------------------------------
+    "speak_answers": True,
+    "speak_engine": "windows",      # windows (offline) | edge (neural, online)
+    "speak_voice": "",              # empty -> the speech language's voice
+    "speak_rate": 1.0,
+    "speak_max_chars": 600,         # cut at a sentence boundary past this
 }
 
 # Saving the settings window used to write the whole default prompt into the
@@ -885,7 +902,11 @@ class Config:
         return prompt
 
     def assistant_prompt(self):
-        return self["assistant_prompt"].strip() or default_assistant_prompt()
+        prompt = self["assistant_prompt"].strip() or default_assistant_prompt()
+        if self["speak_answers"]:
+            prompt += (SPOKEN_RULE_TR if i18n.language() == "tr"
+                       else SPOKEN_RULE_EN)
+        return prompt
 
     # ---- meetings --------------------------------------------------------
 

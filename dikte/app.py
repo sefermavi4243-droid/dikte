@@ -54,6 +54,7 @@ from . import integrate  # noqa: E402
 from . import ipc  # noqa: E402
 from . import mac_window  # noqa: E402
 from . import meeting  # noqa: E402
+from . import speech  # noqa: E402
 from . import trayicon  # noqa: E402
 from . import update  # noqa: E402
 from .i18n import t  # noqa: E402
@@ -186,6 +187,10 @@ class Dikte:
                                theme_name=self.conf["theme"])
         self.recorder = audio.Recorder()
         self.cues = cues.AudioCues()
+        self.speaker = speech.Speaker()
+        self.speaker.failed.connect(self._on_speech_failed)
+        for signal in (self.speaker.started, self.speaker.finished):
+            signal.connect(self._on_speaking_changed)
         self.pipeline = Pipeline(self.conf)
         self.ask_pipeline = Pipeline(self.conf)
         self.meeting_recorder = audio.MeetingRecorder()
@@ -282,6 +287,11 @@ class Dikte:
         self.ask_cancel_action.triggered.connect(self.cancel_ask)
         self.ask_cancel_action.setEnabled(False)
         self.menu.addAction(self.ask_cancel_action)
+
+        self.speak_stop_action = QAction(t("Stop reading aloud"), self.menu)
+        self.speak_stop_action.triggered.connect(self.stop_speaking)
+        self.speak_stop_action.setEnabled(self._speaking())
+        self.menu.addAction(self.speak_stop_action)
 
         self.cancel_action = QAction(t("Discard the recording"), self.menu)
         # The inner method, so that a menu click is never mistaken for the KDE
@@ -778,6 +788,8 @@ class Dikte:
         if isinstance(getattr(self, "home_messages", None), dict):
             self.home_messages[ASK] = ""
             self.home_messages.pop("ask_stage", None)
+        # Talking over the last answer is how it is interrupted.
+        self.speaker.stop()
         self.front_before = self._the_front()
         self.ask_overlay.show_recording(asking=True)
         self._begin_recording(ASK)
@@ -952,6 +964,7 @@ class Dikte:
 
     def cancel_ask(self):
         """Call off the agent, whether it is still recording or already working."""
+        self.speaker.stop()
         if self.ask_state == RECORDING:
             self._cancel()
         elif self.ask_state == BUSY:
@@ -1242,10 +1255,41 @@ class Dikte:
                 t("{name}: {preview}", name=agent, preview=_preview(text)), 6000
             )
         self.cues.play("done")
+        self._speak_answer(text, speech_language)
         self._set_ask_state(IDLE)
         self._settle(ASK, {"ok": True, "answer": text, "question": _raw,
                            "warning": warning, "agent": agent,
                            "speech_language": speech_language})
+
+    def _speak_answer(self, text, speech_language):
+        if not self.conf["speak_answers"]:
+            return
+        language = (speech_language or i18n.language() or "en")[:2].lower()
+        spoken = speech.for_speech(
+            text, self.conf["speak_max_chars"],
+            code_word="kod bloğu" if language == "tr" else "code block",
+        )
+        self.speaker.speak(spoken, engine=self.conf["speak_engine"],
+                           voice=self.conf["speak_voice"], language=language,
+                           rate=self.conf["speak_rate"])
+
+    def _speaking(self):
+        speaker = getattr(self, "speaker", None)
+        return speaker is not None and speaker.speaking
+
+    def stop_speaking(self):
+        speaker = getattr(self, "speaker", None)
+        if speaker is not None:
+            speaker.stop()
+
+    def _on_speaking_changed(self):
+        action = getattr(self, "speak_stop_action", None)
+        if action is not None:
+            action.setEnabled(self._speaking())
+
+    def _on_speech_failed(self, message):
+        self.tray.showMessage(t("Dikte: could not read the answer aloud"), message,
+                              QSystemTrayIcon.MessageIcon.Warning, 6000)
 
     def _on_ask_cancelled(self):
         self.cues.play("failed")

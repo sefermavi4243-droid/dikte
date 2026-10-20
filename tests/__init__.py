@@ -36,3 +36,6 @@ for _var in ("OPENAI_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY",
 # rather than inherit whatever the developer's locale says.
 for _var in ("LC_ALL", "LC_MESSAGES", "LANG"):
     os.environ.pop(_var, None)
+# Set rather than left empty: on Windows an empty environment falls through to
+# the system display language.
+os.environ["LANG"] = "en_US.UTF-8"

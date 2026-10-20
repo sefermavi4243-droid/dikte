@@ -36,12 +36,17 @@ class Resolve(unittest.TestCase):
             self.assertEqual(i18n.resolve("auto"), "tr")
 
     def test_no_locale_at_all_falls_back_to_english(self):
-        with mock.patch.dict("os.environ", {}, clear=True):
+        with mock.patch.dict("os.environ", {}, clear=True),                 mock.patch.object(i18n, "_system_language", return_value=""):
             self.assertEqual(i18n.resolve("auto"), "en")
 
     def test_an_unknown_code_is_not_taken_at_its_word(self):
-        with mock.patch.dict("os.environ", {}, clear=True):
+        with mock.patch.dict("os.environ", {}, clear=True),                 mock.patch.object(i18n, "_system_language", return_value=""):
             self.assertEqual(i18n.resolve("de"), "en")
+
+    def test_windows_display_language_stands_in_for_the_environment(self):
+        with mock.patch.dict("os.environ", {}, clear=True),                 mock.patch.object(i18n, "_system_language",
+                                  return_value="tr_TR"):
+            self.assertEqual(i18n.resolve("auto"), "tr")
 
 
 class Translate(DikteTest):

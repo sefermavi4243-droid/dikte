@@ -5,6 +5,7 @@ No gettext, no .mo files; the string table is small enough to keep in code.
 """
 
 import os
+import sys
 
 _lang = "en"
 
@@ -15,7 +16,22 @@ def resolve(code):
         return code
     env = (os.environ.get("LC_ALL") or os.environ.get("LC_MESSAGES")
            or os.environ.get("LANG") or "")
+    if not env:
+        env = _system_language()
     return "tr" if env.lower().startswith("tr") else "en"
+
+
+def _system_language():
+    """The display language Windows was set to, which sets no variable above."""
+    if sys.platform != "win32":
+        return ""
+    try:
+        import ctypes
+        import locale
+        return locale.windows_locale.get(
+            ctypes.windll.kernel32.GetUserDefaultUILanguage(), "")
+    except (AttributeError, OSError):
+        return ""
 
 
 def set_language(code):
@@ -1179,4 +1195,7 @@ TR = {
     "{size} system": "{size} sistem belleği",
     "{size} {kind} graphics": "{size} {kind} ekran kartı belleği",
 
+    # --- reading answers aloud ------------------------------------------------
+    "Dikte: could not read the answer aloud": "Dikte: cevap sesli okunamadı",
+    "Stop reading aloud": "Sesli okumayı durdur",
 }
