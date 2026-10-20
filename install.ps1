@@ -42,18 +42,38 @@ if ($Uninstall) {
 }
 
 # --- what it needs ----------------------------------------------------------
-$python = Get-Command python -ErrorAction SilentlyContinue
-if (-not $python) {
-    Write-Error "No python found. Install it with: winget install Python.Python.3.12"
+# The Microsoft Store Python redirects its writes under AppData into a private
+# copy that the programs it starts cannot see, which breaks the local whisper
+# server and the voices. A python.org install is preferred over it, and
+# DIKTE_PYTHON names one outright.
+if ($env:DIKTE_PYTHON) {
+    $python = Get-Command $env:DIKTE_PYTHON -ErrorAction SilentlyContinue
+} else {
+    $python = Get-Command python -All -ErrorAction SilentlyContinue |
+        Where-Object { $_.Source -notlike "*\WindowsApps\*" } | Select-Object -First 1
+    if (-not $python) {
+        $python = Get-ChildItem "$env:LOCALAPPDATA\Programs\Python\Python3*\python.exe" -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1 |
+            ForEach-Object { Get-Command $_.FullName }
+    }
+    if (-not $python) {
+        $python = Get-Command python -ErrorAction SilentlyContinue
+        if ($python) {
+            Write-Warning "Only the Microsoft Store Python was found; the local whisper server may not start under it. Install one with: winget install Python.Python.3.13"
+        }
+    }
 }
-$version = & python -c "import sys; print('%d.%d' % sys.version_info[:2])"
+if (-not $python) {
+    Write-Error "No python found. Install it with: winget install Python.Python.3.13"
+}
+$version = & $python.Source -c "import sys; print('%d.%d' % sys.version_info[:2])"
 if ([version]$version -lt [version]"3.11") {
     Write-Error "Python 3.11 or newer is needed, and this one is $version."
 }
-& python -c "import PyQt6.QtWidgets" 2>$null
+& $python.Source -c "import PyQt6.QtWidgets" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Installing PyQt6..."
-    & python -m pip install PyQt6
+    & $python.Source -m pip install PyQt6
     if ($LASTEXITCODE -ne 0) { Write-Error "PyQt6 would not install." }
 }
 if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
