@@ -5,11 +5,12 @@ import shutil
 from PyQt6.QtCore import Qt, QSize, QTimer
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
-    QApplication, QButtonGroup, QDialog, QFrame, QHBoxLayout, QLabel,
+    QApplication, QButtonGroup, QComboBox, QDialog, QFrame, QHBoxLayout, QLabel,
     QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from . import api, assistant, audio, cleanup, config as cfg, ggml
+from . import api, assistant, audio, cleanup, config as cfg, ggml, projects
+from .chat_ui import ChatView, conversation
 from .i18n import t
 from . import theme
 
@@ -281,32 +282,98 @@ class HomeWindow(QWidget):
 
     def _assistant_page(self):
         page = QWidget()
+        page.setObjectName("assistant_page")
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        header = QHBoxLayout()
+        header.setSpacing(6)
         self.ask_status = _label("", "heading")
-        layout.addWidget(self.ask_status)
-        self.ask_scope = _label("", "muted")
+        header.addWidget(self.ask_status, 1)
+        self.project_choice = QComboBox()
+        self.project_choice.setObjectName("project")
+        self.project_choice.setAccessibleName(t("Project"))
+        self.project_choice.setMinimumWidth(170)
+        self.project_choice.activated.connect(self._project_chosen)
+        header.addWidget(self.project_choice)
+        self.wake_toggle = _button(t("Listen for “Claude”"), self._toggle_wake, "toggle")
+        self.wake_toggle.setCheckable(True)
+        header.addWidget(self.wake_toggle)
+        self.speak_toggle = _button(t("Read aloud"), self._toggle_speak, "toggle")
+        self.speak_toggle.setCheckable(True)
+        header.addWidget(self.speak_toggle)
+        layout.addLayout(header)
+
+        self.ask_scope = _label("", "models")
         layout.addWidget(self.ask_scope)
+        self.chat = ChatView()
+        self.chat.setMinimumHeight(200)
+        layout.addWidget(self.chat, 1)
+        self.ask_error = _label()
+        layout.addWidget(self.ask_error)
+
         actions = QHBoxLayout()
         self.ask_button = _button("", self._ask, "primary")
         actions.addWidget(self.ask_button)
-        actions.addWidget(_button(t("Start a new conversation"), self.controller.reset_conversation))
-        actions.addStretch()
-        layout.addLayout(actions)
         self.ask_pause = _button(t("Pause the recording"), self._pause)
-        layout.addWidget(self.ask_pause)
+        actions.addWidget(self.ask_pause)
         self.ask_cancel = _button(t("Stop"), self._cancel_ask)
-        layout.addWidget(self.ask_cancel)
-        self.ask_error = _label()
-        layout.addWidget(self.ask_error)
-        self.ask_output = QPlainTextEdit()
-        self.ask_output.setReadOnly(True)
-        self.ask_output.setAccessibleName(t("Assistant reply"))
-        self.ask_output.setPlaceholderText(t("The assistant's reply will appear here."))
-        self.ask_output.setMinimumHeight(160)
-        layout.addWidget(self.ask_output, 1)
-        layout.addWidget(_button(t("Copy"), lambda: QApplication.clipboard().setText(self.ask_output.toPlainText())))
+        actions.addWidget(self.ask_cancel)
+        actions.addStretch()
+        actions.addWidget(_button(t("Start a new conversation"), self._new_conversation))
+        actions.addWidget(_button(t("Copy"), lambda: QApplication.clipboard().setText(
+            self.chat.last_answer())))
+        layout.addLayout(actions)
         return page
+
+    def _project_chosen(self, index):
+        path = self.project_choice.itemData(index)
+        if path == "":
+            self.controller._browse_project()
+        elif path:
+            self.controller.choose_project(path)
+        self._last_projects = None
+        self.refresh()
+
+    def _toggle_wake(self):
+        self.controller.toggle_wake()
+        self.refresh()
+
+    def _toggle_speak(self):
+        self.conf["speak_answers"] = not self.conf["speak_answers"]
+        if not self.conf["speak_answers"]:
+            self.controller.stop_speaking()
+        try:
+            self.conf.save()
+        except OSError:
+            pass
+        self.refresh()
+
+    def _new_conversation(self):
+        self.controller.reset_conversation()
+        self.refresh_results()
+
+    def _refresh_projects(self):
+        here = projects.current(self.conf)
+        recent = projects.recent(self.conf)
+        key = (here, tuple(recent))
+        if key == getattr(self, "_last_projects", None):
+            return
+        self._last_projects = key
+        self.project_choice.blockSignals(True)
+        self.project_choice.clear()
+        if not here:
+            self.project_choice.addItem(t("Home folder"), None)
+        listed = recent if not here or here in recent else [here] + recent
+        for path in listed:
+            self.project_choice.addItem(projects.label(path), path)
+            self.project_choice.setItemData(self.project_choice.count() - 1, path,
+                                            Qt.ItemDataRole.ToolTipRole)
+        self.project_choice.addItem(t("Choose a folder…"), "")
+        if here:
+            self.project_choice.setCurrentIndex(max(0, self.project_choice.findData(here)))
+        self.project_choice.blockSignals(False)
 
     def _history_page(self):
         page = QWidget()
@@ -355,6 +422,7 @@ class HomeWindow(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        theme.dark_title_bar(self, theme.is_dark(self.conf["theme"]))
         self._timer.start()
         self.refresh_results()
         self.refresh()
@@ -369,8 +437,8 @@ class HomeWindow(QWidget):
         # status line, and its retry lives in the history.
         result = next((row for row in reversed(rows)
                        if row.get("mode") != "ask" and not row.get("failed")), {})
-        answer = next((row for row in reversed(rows) if row.get("mode") == "ask"), {})
-        self._set_result(result, answer)
+        self._rows = rows
+        self._set_result(result, None)
 
     def _set_result(self, result, answer):
         if result != self._last_result:
@@ -381,9 +449,7 @@ class HomeWindow(QWidget):
             self.latest_warning.setVisible(bool(self.latest_warning.text()))
             self.copy_button.setEnabled(bool(result.get("text")))
             self.open_button.setEnabled(bool(result.get("text")))
-        if answer != self._last_answer:
-            self._last_answer = dict(answer)
-            self.ask_output.setPlainText(answer.get("text", ""))
+        self._refresh_chat()
 
     def refresh(self, *_):
         app, conf = self.controller, self.conf
@@ -470,9 +536,30 @@ class HomeWindow(QWidget):
             permission = t("Uses the CLI's configured permissions")
         else:
             permission = t("Chat provider; no local command execution")
-        self.ask_scope.setText(t("{name}\nPermissions: {permission}\nWorking directory: {directory}\nShortcut: {shortcut}\nThis button sends a spoken command to the assistant. Its reply is copied without automatic pasting.", name=name, permission=permission, directory=directory if provider in ("claude", "codex", "agy") else t("Not used"), shortcut=conf["assistant_shortcut"] or t("Not assigned")))
+        self.ask_scope.setText(t("{name} · {permission} · {directory} · Shortcut: {shortcut}", name=name, permission=permission, directory=directory if provider in ("claude", "codex", "agy") else t("Not used"), shortcut=conf["assistant_shortcut"] or t("Not assigned")))
+        self.ask_scope.setToolTip(t("This button sends a spoken command to the assistant. Its reply is copied without automatic pasting."))
         state = app.ask_state
-        self.ask_status.setText(t("Paused") if state == "recording" and app.paused else t("Recording") if state == "recording" else messages.get("ask_stage", t("Working…")) if state == "busy" else t("Assistant"))
+        listener = getattr(app, "wake", None)
+        listening = bool(listener is not None and listener.running)
+        armed = bool(listening and listener.armed)
+        speaking = bool(getattr(app, "_speaking", lambda: False)())
+        if state == "recording":
+            status = t("Paused") if app.paused else t("Recording")
+        elif state == "busy":
+            status = messages.get("ask_stage", t("Working…"))
+        elif speaking:
+            status = t("Speaking…")
+        elif armed:
+            status = t("Listening…")
+        elif listening:
+            status = t("Say “Claude”")
+        else:
+            status = name
+        self.ask_status.setText(status)
+        self.wake_toggle.setChecked(bool(conf["wake_enabled"]))
+        self.speak_toggle.setChecked(bool(conf["speak_answers"]))
+        self._refresh_projects()
+        self._refresh_chat()
         available = self._assistant_available()
         self.ask_button.setText(t("Stop and send command") if state == "recording" else t("Set up transcription") if not ready else t("Record a command") if available else t("Set up assistant"))
         self.ask_button.setEnabled(state == "recording" or (state == "idle" and not app.recording))
@@ -481,6 +568,16 @@ class HomeWindow(QWidget):
         self.ask_cancel.setVisible(state != "idle")
         self.ask_error.setText(messages.get("ask", "") or ("" if available else t("Install the selected assistant CLI or configure its connection in Settings.")))
         self.ask_error.setVisible(bool(self.ask_error.text()))
+
+    def _refresh_chat(self):
+        rows = getattr(self, "_rows", None)
+        if rows is None:
+            rows = self._rows = cfg.read_history(self.conf["history_limit"])
+        pending = None
+        if getattr(self.controller, "ask_state", "idle") == "busy":
+            messages = getattr(self.controller, "home_messages", {})
+            pending = messages.get("ask_stage") or t("Working…")
+        self.chat.set_messages(conversation(rows, self.conf), pending)
 
     def _assistant_available(self):
         provider = self.conf["assistant_provider"]

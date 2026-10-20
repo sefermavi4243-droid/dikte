@@ -599,6 +599,7 @@ DEFAULTS = {
     "assistant_dir": "",            # empty -> the home directory
     "assistant_recent_dirs": [],    # newest first, for the tray and voice
     "projects_roots": "",           # one per line; empty -> projects.default_roots()
+    "chat_since": "",               # the chat panel shows commands from here on
     "assistant_prompt": "",         # empty -> language-specific default
     "assistant_cleanup": False,     # the model reads through filler words fine
     "assistant_paste": True,        # paste the answer, not just copy it

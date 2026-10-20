@@ -1006,6 +1006,12 @@ class Dikte:
         """Drop the thread Claude has been following, so the next command starts
         a conversation of its own."""
         assistant.clear_session()
+        # The chat panel starts over with it.
+        self.conf["chat_since"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            self.conf.save()
+        except OSError:
+            pass
         self.ask_overlay.show_done(
             t("{name} starts fresh next time.",
               name=assistant.display_name(self.conf)), 2500
@@ -1396,14 +1402,14 @@ class Dikte:
     def _on_woke(self):
         self.speaker.stop()
         self.cues.play("start")
-        self.ask_overlay.show_recording(asking=True)
+        self.ask_overlay.show_listening(t("Listening…"))
 
     def _on_wake_level(self, level):
         if self.ask_state == IDLE:
             self.ask_overlay.push_level(level)
 
     def _on_wake_armed(self, armed):
-        if not armed and self.ask_state == IDLE and self.ask_overlay.state == "asking":
+        if not armed and self.ask_state == IDLE and self.ask_overlay.state == "listening":
             self.ask_overlay.dismiss()
 
     def _on_wake_command(self, text, wav_path, duration):
@@ -1424,7 +1430,7 @@ class Dikte:
         self.speaker.stop()
         if self.ask_state == BUSY:
             self.cancel_ask()
-        elif self.ask_overlay.state == "asking" and self.ask_state == IDLE:
+        elif self.ask_overlay.state in ("listening", "speaking") and self.ask_state == IDLE:
             self.ask_overlay.dismiss()
 
     def _on_conversation_ended(self):
@@ -1438,7 +1444,9 @@ class Dikte:
         if (listener is not None and listener.running
                 and self.conf["wake_conversation"] and self.ask_state == IDLE):
             listener.arm(self.conf["wake_follow_seconds"])
-            self.ask_overlay.show_recording(asking=True)
+            self.ask_overlay.show_listening(t("Listening…"))
+        elif self.ask_overlay.state == "speaking":
+            self.ask_overlay.dismiss()
 
     def _on_wake_failed(self, message):
         self.tray.showMessage(t("Dikte: listening for the wake word stopped"),
@@ -1458,6 +1466,10 @@ class Dikte:
         action = getattr(self, "speak_stop_action", None)
         if action is not None:
             action.setEnabled(self._speaking())
+        if self._speaking() and self.ask_state == IDLE:
+            self.ask_overlay.show_speaking(t("Speaking…"))
+        elif not self._speaking() and self.ask_overlay.state == "speaking":
+            self.ask_overlay.dismiss()
 
     def _on_speech_failed(self, message):
         self.tray.showMessage(t("Dikte: could not read the answer aloud"), message,

@@ -104,7 +104,15 @@ def capture_theme(name, output):
         home._timer.stop()
         settings.file_label.setText("örnek-kayıt.wav")
         settings.file_output.setPlainText(SAMPLE)
-        home.ask_output.setPlainText("Örnek yanıt: Önce arayüzü doğrulayalım, ardından sürümü hazırlayalım.")
+        for question, answer in (
+            ("Ayarlar sayfasına karanlık mod ekle.",
+             "`settings.py` içine tema anahtarı ekledim ve **karanlık mod** varsayılan oldu."),
+            ("Testleri çalıştır.", "Testlerin hepsi geçti: 42 test, 3,1 saniye."),
+        ):
+            cfg.append_history({"ts": "2026-09-09 14:40:00", "mode": "ask",
+                                "question": question, "text": answer})
+        home.refresh_results()
+        home.refresh()
         indicator = overlay.Overlay(theme_name=name)
         harness.addCleanup(indicator.deleteLater)
         harness.addCleanup(indicator.close)

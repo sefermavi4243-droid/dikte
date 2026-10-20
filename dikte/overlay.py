@@ -20,8 +20,12 @@ GAP = 10        # between two indicators sharing a corner
 FOLLOW_EVERY = 8   # ticks between two looks for the pointer: about four a second
 
 STATE_ROLES = {"recording": "rec", "asking": "ask", "meeting": "rec", "busy": "accent",
-               "done": "ok", "warning": "warn", "error": "err"}
-LIVE = ("recording", "asking", "meeting")
+               "done": "ok", "warning": "warn", "error": "err",
+               "listening": "ask", "speaking": "ok"}
+LIVE = ("recording", "asking", "meeting", "listening", "speaking")
+# Live states that carry a word where the clock would be.
+LABELLED = ("listening", "speaking")
+LABEL_WIDTH = 104
 
 
 # KWin's interface, kept once one has been built. See _compositor_screen.
@@ -169,6 +173,24 @@ class Overlay(QWidget):
         self._hide_timer.stop()
         self._appear()
 
+    def show_listening(self, message):
+        """Waiting for a command without a key press: the ribbon follows the
+        room, and the corner says it is listening rather than counting."""
+        self._show_labelled("listening", message)
+
+    def show_speaking(self, message):
+        """The answer is being read aloud; the ribbon moves on its own."""
+        self._show_labelled("speaking", message)
+
+    def _show_labelled(self, state, message):
+        self.state = state
+        self.message = message
+        self.levels = [0.0] * BARS
+        self.paused = False
+        self.muted = False
+        self._hide_timer.stop()
+        self._appear()
+
     def show_meeting(self):
         """Both channels at once: your voice up, the other side down."""
         self.state = "meeting"
@@ -274,7 +296,9 @@ class Overlay(QWidget):
         self.hide()
 
     def _resize_to_content(self):
-        if self.state in LIVE:
+        if self.state in LABELLED:
+            width = MIN_WIDTH + LABEL_WIDTH - 44
+        elif self.state in LIVE:
             # A meeting runs long enough to need an hours field.
             width = MIN_WIDTH + (24 if self.state == "meeting" else 0)
         else:
@@ -348,7 +372,12 @@ class Overlay(QWidget):
         moved = self.below is not None and self.below.showing != self._stacked
         if moved or self._wandered_off():
             self._reposition()
-        if self.state in LIVE and not self.paused:
+        if self.state == "speaking":
+            # No microphone to follow: a voice-like ripple drawn from the clock.
+            wave = (0.5 + 0.5 * math.sin(self._phase * 3.1)) * (
+                0.55 + 0.45 * math.sin(self._phase * 0.9 + 1.3))
+            self.levels = self.levels[1:] + [0.08 + 0.5 * wave]
+        elif self.state in LIVE and not self.paused:
             # keep the ribbon moving even through a pause in speech
             self.levels = self.levels[1:] + [self.levels[-1] * 0.72]
             if self.state == "meeting":
@@ -458,7 +487,9 @@ class Overlay(QWidget):
         # A meeting's clock carries an hours field, so it needs more room and
         # the ribbon has to stop earlier.
         left = 46.0
-        right = self.width() - (74.0 if self.state == "meeting" else 58.0)
+        right = self.width() - (74.0 if self.state == "meeting"
+                                else LABEL_WIDTH + 14.0 if self.state in LABELLED
+                                else 58.0)
         bar_w = 2.6
         gap = (right - left - BARS * bar_w) / max(1, BARS - 1)
         return left, bar_w, bar_w + gap
@@ -503,6 +534,15 @@ class Overlay(QWidget):
                 painter.drawRoundedRect(QRectF(x, y, bar_w, h), 1.3, 1.3)
 
     def _draw_time(self, painter):
+        if self.state in LABELLED:
+            painter.setFont(self._label_font())
+            painter.setPen(self.colors["text"])
+            painter.drawText(
+                QRectF(self.width() - LABEL_WIDTH - 10, 0, LABEL_WIDTH, self.height()),
+                int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
+                self.message,
+            )
+            return
         font = QFont(self.font())
         font.setPointSizeF(10.0)
         font.setFamilies(["monospace"])

@@ -328,6 +328,7 @@ class Pipeline(QObject):
                 "question": question,
                 "assistant": assistant.provider(conf) if ask else "",
                 "assistant_model": assistant.model(conf) if ask else "",
+                "project": assistant.working_dir(conf) if ask else "",
                 "speech_language": speech_language,
                 "raw": raw,
                 "text": text,

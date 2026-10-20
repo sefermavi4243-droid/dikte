@@ -1228,6 +1228,7 @@ class SettingsWindow(QDialog):
 
     def showEvent(self, event):
         super().showEvent(event)
+        theme.dark_title_bar(self, theme.is_dark(self.conf["theme"]))
         self._show_local_state()
         self._local_state_timer.start()
 

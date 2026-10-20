@@ -1215,6 +1215,16 @@ TR = {
     # --- wake word --------------------------------------------------------------
     "Listen for “Claude”": "“Claude” dendiğinde dinle",
     "Talk to you later.": "Görüşürüz.",
+
+    # --- chat panel ---------------------------------------------------------------
+    "Read aloud": "Sesli oku",
+    "Project": "Proje",
+    "Home folder": "Ana klasör",
+    "Speaking…": "Konuşuyor…",
+    "Listening…": "Dinliyorum…",
+    "Say “Claude”": "“Claude” diye seslen",
+    "{name} · {permission} · {directory} · Shortcut: {shortcut}": "{name} · {permission} · {directory} · Kısayol: {shortcut}",
+    "Say “Claude” or press the button, and the conversation shows up here.": "“Claude” diye seslen ya da düğmeye bas; konuşma burada görünür.",
     "Dikte: listening for the wake word stopped": "Dikte: uyandırma kelimesi dinlemesi durdu",
     "The background microphone stopped.": "Arka plandaki mikrofon durdu.",
 }

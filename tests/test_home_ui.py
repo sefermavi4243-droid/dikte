@@ -1,5 +1,6 @@
 """Native workspace navigation, capture boundaries and persisted results."""
 
+import os
 from types import SimpleNamespace
 from unittest import mock
 
@@ -193,7 +194,7 @@ class Home(DikteTest):
         cfg.append_history({"mode": "ask", "text": "Actual answer"})
         self.window.refresh_results()
         self.assertEqual(self.window.latest_text.toPlainText(), "Actual transcript")
-        self.assertEqual(self.window.ask_output.toPlainText(), "Actual answer")
+        self.assertEqual(self.window.chat.last_answer(), "Actual answer")
         cursor = self.window.latest_text.textCursor()
         cursor.setPosition(3)
         self.window.latest_text.setTextCursor(cursor)
@@ -394,6 +395,30 @@ class Home(DikteTest):
         self.window.show_mode("ask")
         self.assertNotIn(self.conf["assistant_dir"], self.window.ask_scope.text())
         self.assertIn(home_ui.assistant.working_dir(self.conf), self.window.ask_scope.text())
+
+    def test_the_chat_shows_this_projects_conversation_since_the_reset(self):
+        other = os.path.join(self.root, "elsewhere")
+        cfg.append_history({"ts": "2026-09-09 10:00:00", "mode": "ask",
+                            "question": "old one", "text": "before the reset"})
+        cfg.append_history({"ts": "2026-09-09 12:00:00", "mode": "ask",
+                            "question": "other project", "text": "not here",
+                            "project": other})
+        cfg.append_history({"ts": "2026-09-09 12:01:00", "mode": "ask",
+                            "question": "add a button", "text": "Added it.",
+                            "project": home_ui.assistant.working_dir(self.conf)})
+        self.conf["chat_since"] = "2026-09-09 11:00:00"
+        self.window.refresh_results()
+        shown = [(q, a) for q, a, _ts, _w in home_ui.conversation(
+            self.window._rows, self.conf)]
+        self.assertEqual(shown, [("add a button", "Added it.")])
+        self.assertEqual(self.window.chat.last_answer(), "Added it.")
+
+    def test_a_busy_agent_shows_what_it_is_doing_in_the_chat(self):
+        self.controller.ask_state = "busy"
+        self.controller.home_messages["ask_stage"] = "Running a command…"
+        self.window.refresh()
+        self.assertEqual(self.window.chat._pending, "Running a command…")
+        self.assertIn("Running a command…", self.window.ask_status.text())
 
     def test_turkish_task_labels_and_runtime_status(self):
         i18n.set_language("tr")
