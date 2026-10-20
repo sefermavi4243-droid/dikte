@@ -12,6 +12,11 @@ library, 3.11 or newer, and PyQt6.
 
 *[Türkçe README](README.tr.md)*
 
+> **This is a fork** of [yusufipk/dikte](https://github.com/yusufipk/dikte) that
+> adds voice control of Claude Code on Windows: a "Claude" wake word, answers
+> read aloud, project switching by voice and a chat panel. The additions are
+> documented in Turkish in [README.tr.md](README.tr.md#sesle-claude-code).
+
 <p align="center">
   <img src="docs/home.webp" width="620" alt="Dikte, Nord theme">
   <br><sub>Nord (default)</sub>
