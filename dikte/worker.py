@@ -23,6 +23,7 @@ from . import cleanup
 from . import config as cfg
 from . import i18n
 from . import paste
+from . import projects
 from . import vad
 from .i18n import t
 
@@ -60,6 +61,7 @@ class Pipeline(QObject):
     finished = pyqtSignal(str, str, str, str)  # raw, final text, warning, language
     failed = pyqtSignal(str)
     cancelled = pyqtSignal()
+    project_changed = pyqtSignal(str)  # the agent's new folder
 
     def __init__(self, conf, parent=None):
         super().__init__(parent)
@@ -125,6 +127,31 @@ class Pipeline(QObject):
             finally:
                 with self._jobs_lock:
                     self._retrying.discard(job[0])
+
+    def _project_command(self, conf, kind, name):
+        """Switch or create the agent's folder; the answer to say back."""
+        if kind == "create":
+            try:
+                path = projects.create(conf, name)
+            except (OSError, ValueError) as exc:
+                raise assistant.AssistantError(t(
+                    "Could not create the project: {error}", error=exc)) from exc
+            answer = t("Created project {name}.", name=os.path.basename(path))
+        else:
+            path = projects.find(conf, name)
+            if not path:
+                raise assistant.AssistantError(t(
+                    "No project named {name} was found.", name=name))
+            projects.use(conf, path)
+            answer = t("Switched to project {name}.", name=os.path.basename(path))
+        # A conversation belongs to the folder it was held in.
+        assistant.clear_session()
+        try:
+            conf.save()
+        except OSError as exc:
+            print(f"dikte: could not save the project: {exc}", file=sys.stderr)
+        self.project_changed.emit(path)
+        return answer
 
     def cancel(self):
         """Give up on a job already under way.
@@ -260,7 +287,11 @@ class Pipeline(QObject):
                     print(f"dikte: cleanup failed: {exc}", file=sys.stderr)
 
             question = ""
-            if ask:
+            command = projects.parse(text) if ask else None
+            if command:
+                question = text
+                text = self._project_command(conf, *command)
+            elif ask:
                 question = text
                 self.stage.emit(t("Asking {name}…", name=i18n.name(
                     assistant.display_name(conf), "dative")))
@@ -274,6 +305,10 @@ class Pipeline(QObject):
             wants_paste = (conf["assistant_paste"] if ask else conf["auto_paste"])
             if paste_override is not None:
                 wants_paste = paste_override
+            if command:
+                # The confirmation is for the ear and the corner, not the
+                # window that happens to have the cursor.
+                wants_paste = False
 
             # Into the history before the paste is attempted: the record says
             # what was dictated, not whether a key press landed, and a paste

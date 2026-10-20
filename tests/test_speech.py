@@ -4,7 +4,7 @@ from dikte import config as cfg
 from dikte import i18n
 from dikte import speech
 
-from .support import DikteTest
+from tests.support import DikteTest
 
 
 class ForSpeech(unittest.TestCase):

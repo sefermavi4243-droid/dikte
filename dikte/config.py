@@ -597,6 +597,8 @@ DEFAULTS = {
     "assistant_requesty_model": "google/gemini-3.5-flash",
     "assistant_reasoning": "",      # empty -> the model's own default
     "assistant_dir": "",            # empty -> the home directory
+    "assistant_recent_dirs": [],    # newest first, for the tray and voice
+    "projects_roots": "",           # one per line; empty -> projects.default_roots()
     "assistant_prompt": "",         # empty -> language-specific default
     "assistant_cleanup": False,     # the model reads through filler words fine
     "assistant_paste": True,        # paste the answer, not just copy it

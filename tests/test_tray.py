@@ -83,6 +83,7 @@ class TrayClicks(unittest.TestCase):
         target.tray = QSystemTrayIcon()
         target._refresh_update = lambda: None
         target._set_icon = lambda name: None
+        target.conf = {"assistant_dir": "", "assistant_recent_dirs": []}
         calls = []
         target._tray_clicked = lambda reason: calls.append(reason)
         target.tray.activated.connect(target._tray_clicked)

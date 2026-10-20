@@ -39,7 +39,8 @@ from PyQt6.QtCore import (QObject, QTimer, QElapsedTimer, QSocketNotifier,  # no
                           Qt, QUrl, pyqtSignal)
 from PyQt6.QtGui import QAction, QCursor, QDesktopServices, QIcon  # noqa: E402
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon  # noqa: E402
+from PyQt6.QtWidgets import (QApplication, QFileDialog, QInputDialog,  # noqa: E402
+                             QMenu, QSystemTrayIcon)
 
 from . import assistant  # noqa: E402
 from . import audio  # noqa: E402
@@ -54,6 +55,7 @@ from . import integrate  # noqa: E402
 from . import ipc  # noqa: E402
 from . import mac_window  # noqa: E402
 from . import meeting  # noqa: E402
+from . import projects  # noqa: E402
 from . import speech  # noqa: E402
 from . import trayicon  # noqa: E402
 from . import update  # noqa: E402
@@ -217,6 +219,7 @@ class Dikte:
         self.ask_pipeline.finished.connect(self._on_ask_finished)
         self.ask_pipeline.failed.connect(self._on_ask_error)
         self.ask_pipeline.cancelled.connect(self._on_ask_cancelled)
+        self.ask_pipeline.project_changed.connect(self._on_project_changed)
         self.meeting_recorder.levels.connect(self._on_meeting_levels)
         self.meeting_recorder.stopped.connect(self._on_meeting_recorded)
         self.meeting_recorder.died.connect(self._on_meeting_died)
@@ -282,6 +285,7 @@ class Dikte:
         self.reset_action = QAction(t("Start a new conversation"), self.menu)
         self.reset_action.triggered.connect(self.reset_conversation)
         self.menu.addAction(self.reset_action)
+        self._build_project_menu()
 
         self.ask_cancel_action = QAction("", self.menu)
         self.ask_cancel_action.triggered.connect(self.cancel_ask)
@@ -1272,6 +1276,74 @@ class Dikte:
         self.speaker.speak(spoken, engine=self.conf["speak_engine"],
                            voice=self.conf["speak_voice"], language=language,
                            rate=self.conf["speak_rate"])
+
+    # ---- the agent's project folder ----------------------------------------
+
+    def _build_project_menu(self):
+        here = projects.current(self.conf)
+        title = (t("Project: {name}", name=projects.label(here))
+                 if here else t("Project: home folder"))
+        self.project_menu = QMenu(title, self.menu)
+        group = []
+        for path in projects.recent(self.conf):
+            action = QAction(projects.label(path), self.project_menu)
+            action.setToolTip(path)
+            action.setCheckable(True)
+            action.setChecked(os.path.normcase(path) == os.path.normcase(here))
+            action.triggered.connect(
+                lambda _checked=False, p=path: self.choose_project(p))
+            self.project_menu.addAction(action)
+            group.append(action)
+        if group:
+            self.project_menu.addSeparator()
+        browse = QAction(t("Choose a folder…"), self.project_menu)
+        browse.triggered.connect(self._browse_project)
+        self.project_menu.addAction(browse)
+        create = QAction(t("New project…"), self.project_menu)
+        create.triggered.connect(self._new_project)
+        self.project_menu.addAction(create)
+        self.project_actions = group + [browse, create]
+        self.menu.addMenu(self.project_menu)
+
+    def choose_project(self, path):
+        projects.use(self.conf, path)
+        self._project_saved(path)
+
+    def _project_saved(self, path):
+        # A conversation belongs to the folder it was held in.
+        assistant.clear_session()
+        try:
+            self.conf.save()
+        except OSError as exc:
+            self._report(t("Could not save settings: {error}", error=exc),
+                         self.ask_overlay)
+        self._on_project_changed(path)
+
+    def _on_project_changed(self, _path):
+        self._build_tray()
+        self._refresh_tray()
+        if self.settings_window is not None:
+            self.settings_window.refresh_configuration()
+
+    def _browse_project(self):
+        start = projects.current(self.conf) or (projects.roots(self.conf)
+                                                or [os.path.expanduser("~")])[0]
+        path = QFileDialog.getExistingDirectory(
+            None, t("Choose the project folder"), start)
+        if path:
+            self.choose_project(path)
+
+    def _new_project(self):
+        name, ok = QInputDialog.getText(None, t("New project…"), t("Project name:"))
+        if not ok or not name.strip():
+            return
+        try:
+            path = projects.create(self.conf, name)
+        except (OSError, ValueError) as exc:
+            self._report(t("Could not create the project: {error}", error=exc),
+                         self.ask_overlay)
+            return
+        self._project_saved(path)
 
     def _speaking(self):
         speaker = getattr(self, "speaker", None)

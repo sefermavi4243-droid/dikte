@@ -1198,4 +1198,17 @@ TR = {
     # --- reading answers aloud ------------------------------------------------
     "Dikte: could not read the answer aloud": "Dikte: cevap sesli okunamadı",
     "Stop reading aloud": "Sesli okumayı durdur",
+
+    # --- projects ---------------------------------------------------------------
+    "Could not create the project: {error}": "Proje oluşturulamadı: {error}",
+    "Created project {name}.": "{name} projesi oluşturuldu.",
+    "No project named {name} was found.": "{name} adında bir proje bulunamadı.",
+    "Switched to project {name}.": "{name} projesine geçildi.",
+    "Project: {name}": "Proje: {name}",
+    "Project: home folder": "Proje: ana klasör",
+    "Choose a folder…": "Klasör seç…",
+    "New project…": "Yeni proje…",
+    "Project name:": "Proje adı:",
+    "Choose the project folder": "Proje klasörünü seç",
+    "Could not save settings: {error}": "Ayarlar kaydedilemedi: {error}",
 }
